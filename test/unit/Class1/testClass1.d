@@ -2,10 +2,10 @@ import dflat;
 
 import class1;
 
-void main()
+void setupClrHost()
 {
-    import std.stdio;
     CLRCore.load();
+
     import std.file, std.path;
     auto cwd = getcwd() ~ dirSeparator;
     string ep = thisExePath();
@@ -13,7 +13,7 @@ void main()
     auto tpas = pathcat(TrustedPlatformAssembliesFiles(),
                         buildPath([cwd, "test", "unit", "Class1", "Class1static.dll"]),
                         buildPath([cwd, "test", "unit", "Class1", "Class1.dll"]));
-    //writeln(tpas);
+    //{import std.stdio; writeln(tpas);}
     clrhost = CLRHost(getcwd(),"foo",
         [
             TRUSTED_PLATFORM_ASSEMBLIES : tpas,
@@ -23,8 +23,15 @@ void main()
             SYSTEM_GC_SERVER : "false",
             SYSTEM_GLOBALISATION_INVARIANT : "false"
         ]);
+}
+
+void main()
+{
+    setupClrHost();
+    scope (exit) clrhost.shutdown();
 
     {
+        import std.stdio;
         import std.string : fromStringz;
         writeln("here");
         Class1 a;
@@ -40,6 +47,5 @@ void main()
         scope(exit) a.unpin();
     }
 
-    clrhost.shutdown();
 }
 

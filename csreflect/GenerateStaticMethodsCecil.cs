@@ -26,7 +26,8 @@ class CLRBuilder
         fname = name;
         idir = aidir;
         odir = (aodir == null) ? aidir : aodir;
-        sw = new StreamWriter(odir +fname.ToLower() + ".d", false, Encoding.UTF8);
+        string outputDFile = Path.Combine(odir, fname.ToLower() + ".d");
+        sw = new StreamWriter(outputDFile, false, Encoding.UTF8);
         useCls = false;
     }
     static void Main(string[] args)
