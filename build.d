@@ -1,5 +1,5 @@
 #!/usr/bin/env rund
-import std.algorithm, std.array, std.conv, std.exception, std.file, std.getopt, std.path, std.stdio, std.string;
+import std.algorithm, std.array, std.conv, std.exception, std.file, std.getopt, std.path, std.range, std.stdio, std.string;
 
 import buildlib;
 
@@ -102,16 +102,16 @@ auto makeTargets(ref string[BuildVar] vars)
     //
     // For now I'm going to use 1 (copy binary) because it's simple and should work the same on all versions of .NET
     //
-    const csreflectExe = buildPath(outDir.target, "csreflect.exe");
+    const outCsreflectDir = directoryRule(buildPath(outDir.target, "csreflect"), [outDir]);
+    const csreflectExe = buildPath(outCsreflectDir.target, "csreflect.exe");
     //const csreflectConfig = repoPath("csreflect", "app.config");
     const monoCecilDllRuntimeCopy = csreflectExe.dirName.buildPath(monoCecilDll.baseName);
     auto csreflectCSharpSource = [repoPath("csreflect", "GenerateStaticMethodsCecil.cs")];
     const csreflect = makeRule!( (builder, rule) => builder
-        .deps([outDir])
+        .deps(chain(outCsreflectDir.only, csreflectDeps).array)
         .name("csreflect")
         .sources([monoCecilDll] ~ csreflectCSharpSource)
         .targets([csreflectExe, /*csreflectConfig,*/ monoCecilDllRuntimeCopy])
-        .deps(csreflectDeps)
         .func(() {
             exec([
               dotnetCompiler,
@@ -170,7 +170,7 @@ auto makeTargets(ref string[BuildVar] vars)
                 exec(dotnetLoaderArgs ~ [
                     csreflect.targets[0],
                     testName,
-                    unitTestParentDir,
+                    thisTestDir.target.dirName,
                     thisTestDir.target
                 ]);
             })

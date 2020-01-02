@@ -306,6 +306,7 @@ bool isUpToDate(R, S)(R targets, S sources)
             return false;
         }
     }
+    //writefln("[DEBUG] all these targets are up-to-date: %s", targets);
     return true;
 }
 
@@ -374,7 +375,11 @@ immutable(BuildRule)* directoryRule(string dir, immutable(BuildRule*)[] deps)
         .target(dir)
         .deps(deps)
         .func(() {
-            if (!exists(rule.target)) mkdir(rule.target);
+            if (!exists(rule.target))
+            {
+                writefln("mkdir '%s'", rule.target);
+                mkdir(rule.target);
+            }
             touch(rule.target);
         })
     );

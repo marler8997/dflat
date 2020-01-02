@@ -1,5 +1,9 @@
+/**
+Checkout API here: https://github.com/dotnet/coreclr/blob/master/src/coreclr/hosts/inc/coreclrhost.h
+*/
 module dflat.bind;
 
+import dflat.cstring;
 import derelict.util.loader;
 
 public
@@ -16,10 +20,24 @@ public
         static assert(0, "Need to implement CoreCLR libNames for this operating system.");
 }
 
-alias da_coreclr_initialize = extern(C) int function(const char* exePath, const char* appDomainFriendlyName, int propertyCount, const char** propertyKeys, const char** propertyValues, void** hostHandle, uint* domainId);
+// TODO: this should come from a library like druntime
+struct HRESULT
+{
+    private uint value;
+    bool passed() const { return value == 0; }
+    bool failed() const { return value != 0; }
+    uint rawValue() const { return value; }
+    void toString(Sink)(Sink sink) const
+    {
+        import std.format: formattedWrite;
+        formattedWrite(sink, "0x%x", value);
+    }
+}
+
+alias da_coreclr_initialize = extern(C) HRESULT function(CString exePath, CString appDomainFriendlyName, int propertyCount, const CString* propertyKeys, const CString* propertyValues, void** hostHandle, uint* domainId);
 alias da_coreclr_shutdown = extern(C) int function(void* hostHandle, uint domainId);
 alias da_coreclr_shutdown_2 = extern(C) int function(void* hostHandle, uint domainId, int* latchedExitCode);
-alias da_coreclr_create_delegate = extern(C) int function(void* hostHandle, uint domainId, const char* entryPointAssemblyName, const char* entryPointTypeName, const char* entryPointMethodName, void** dg);
+alias da_coreclr_create_delegate = extern(C) int function(void* hostHandle, uint domainId, CString entryPointAssemblyName, CString entryPointTypeName, CString entryPointMethodName, void** dg);
 alias da_coreclr_execute_assembly = extern(C) int function(void* hostHandle, uint domainId, int argc, const char** argv, const char* managedAssemblyPath, uint* exitCode);
 
 __gshared

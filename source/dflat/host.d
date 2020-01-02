@@ -1,5 +1,7 @@
+// TODO: rename this to backend/coreclr.d
 module dflat.host;
 
+import dflat.cstring;
 import dflat.bind;
 enum : string
 {
@@ -54,35 +56,9 @@ string TrustedPlatformAssembliesFiles(string dir = dirName(dflat.bind.libNames))
 
 struct CLRHost
 {
-    private import std.string : toStringz;
-    void* handle;
-    uint domainId; // an isolation unit within a process
-    this(string exePath,string name,string[string] props)
-    {
-        import std.algorithm : each, map;
-        import std.array;
-        import std.string;
+    private void* handle;
+    private uint domainId; // an isolation unit within a process
 
-        int len = cast(int)props.length;
-        auto keys = props.keys.map!(toStringz).array;
-        auto vals = props.values.map!(toStringz).array;
-
-        auto err = coreclr_initialize(exePath.toStringz,
-                           name.toStringz,
-                           len,
-                           keys.ptr,
-                           vals.ptr,
-                           &handle,
-                           &domainId)
-            ;
-        if (err)
-        {
-            import std.stdio;
-            writeln("coreclr_initialize error! err =",err);
-            foreach(k,v;props)
-                writeln(k,": ",v);
-        }
-    }
     void shutdown()
     {
         coreclr_shutdown(handle, domainId);
@@ -105,10 +81,11 @@ struct CLRHost
     {
         void* dg;
 
+        // TODO: use tempCString instead???
         auto err = coreclr_create_delegate(handle, domainId,
-                                entryPointAssemblyName.toStringz,
-                                entryPointTypeName.toStringz,
-                                entryPointMethodName.toStringz,
+                                entryPointAssemblyName.toCString,
+                                entryPointTypeName.toCString,
+                                entryPointMethodName.toCString,
                                 &dg);
         if (err)
         {
@@ -123,3 +100,89 @@ struct CLRHost
 }
 
 __gshared CLRHost clrhost;
+
+struct CoreclrProperties
+{
+    private uint count;
+    const(CString)* keys;
+    const(CString)* values;
+
+    this(string[string] propMap)
+    in { assert(propMap.length <= uint.max); } do
+    {
+        import std.array;
+        import std.string;
+        import std.algorithm : each, map;
+        this.count = cast(uint)propMap.length;
+        this.keys = propMap.keys.map!(e => CString(e.toStringz)).array.ptr;
+        this.values = propMap.values.map!(e => CString(e.toStringz)).array.ptr;
+    }
+}
+
+string[string] coreclrDefaultProperties()
+{
+    const cwd = getcwd();
+    return [
+        TRUSTED_PLATFORM_ASSEMBLIES : TrustedPlatformAssembliesFiles(),
+        APP_PATHS : cwd,
+        APP_NI_PATHS : cwd,
+        NATIVE_DLL_SEARCH_DIRECTORIES : cwd,
+        SYSTEM_GC_SERVER : "false",
+        SYSTEM_GLOBALISATION_INVARIANT : "false"
+    ];
+}
+
+struct CoreclrOptions
+{
+    CString exePath;
+    CString appDomainFriendlyName;
+    CoreclrProperties properties;
+}
+
+HRESULT tryCoreclrInit(CLRHost* host, const ref CoreclrOptions options)
+{
+    import std.internal.cstring : tempCString;
+
+    // TODO: verify we can use tempCString
+    if (options.exePath is null)
+    {
+        const exePath = tempCString(thisExePath);
+        const newOptions = const CoreclrOptions(CString(exePath), options.appDomainFriendlyName, options.properties);
+        return tryCoreclrInit(host, newOptions);
+    }
+    const appDomain = options.appDomainFriendlyName ? options.appDomainFriendlyName : options.exePath;
+
+    version (DebugCoreclr)
+    {
+        writefln("calling coreclr_initialize...");
+        writefln("exePath = '%s'", options.exePath);
+        writefln("appDomainFriendlyName = '%s'", options.appDomainFriendlyName);
+        writefln("%s properties:", options.properties.count);
+        foreach (i; 0 .. options.properties.count)
+        {
+            writefln("%s=%s", options.properties.keys[i], options.properties.values[i]);
+        }
+    }
+    const result = coreclr_initialize(
+        options.exePath, // absolute path of the native host executable
+        appDomain,
+        options.properties.count,
+        options.properties.keys,
+        options.properties.values,
+        &host.handle, &host.domainId);
+    version (DebugCoreclr)
+    {
+        writefln("coreclr_initialize returned %s", result);
+    }
+    return result;
+}
+
+void coreclrInit(CLRHost* host, const ref CoreclrOptions options)
+{
+    const result = tryCoreclrInit(host, options);
+    if (result.failed)
+    {
+        import std.format : format;
+        throw new Exception(format("coreclr_initialize failed, result=0x%08x", result.rawValue));
+    }
+}
