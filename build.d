@@ -3,7 +3,81 @@ import std.algorithm, std.array, std.conv, std.exception, std.file, std.getopt, 
 
 import buildlib;
 
-enum thisBuildScript = __FILE_FULL_PATH__.buildNormalizedPath;
+int usage(T)(TargetsResult result, const string[BuildVar] vars, T getoptResult)
+{
+    defaultGetoptPrinter("./build.d <targets>..", getoptResult.options);
+    writeln();
+    // Print targets with a descriptions, name or single target
+    writeln("Common Targets");
+    writeln("------------");
+    foreach (rule; BuildRuleRange(result.rootRules))
+    {
+        if (rule.description)
+            writefln("%s | %s", *rule, rule.description);
+        else if (rule.name)
+            writefln("%s", rule.name);
+        else if (rule.target)
+            writefln("%s", rule.target);
+    }
+    writeln();
+    writeln("Variables");
+    writeln("------------");
+    foreach (name; __traits(allMembers, BuildVar))
+    {
+        writefln("%s | default=%s", name, vars.get(__traits(getMember, BuildVar, name), "<none>"));
+    }
+    return 1;
+}
+
+int main(string[] args)
+{
+    try { return main2(args); }
+    catch (AlreadyReportedException) { return 1; }
+}
+int main2(string[] args)
+{
+    // TODO: chdir to a random temporary directory so we know which works from any directory?
+    auto getoptResult = getopt(args);
+
+    string[BuildVar] vars;
+    args = args[1..$];
+    auto targetStrings = appender!(string[]);
+    foreach (arg; args)
+    {
+        if (!tryParseVar(vars, arg))
+            targetStrings.put(arg);
+    }
+    const makeTargetsResult = makeTargets(vars);
+    if (getoptResult.helpWanted || targetStrings.data.length == 0)
+        return usage(makeTargetsResult, vars, getoptResult);
+    if (makeTargetsResult.errorCount > 0)
+        return 1; // errors already printed
+    const rootRules = makeTargetsResult.rootRules;
+
+    auto rules = appender!(immutable(BuildRule*)[])();
+    foreach (target; targetStrings.data)
+    {
+        auto rule = findRule(rootRules, target);
+        if (rule is null)
+        {
+            writefln("Error: unknown target '%s'", target);
+            return 1;
+        }
+        rules.put(rule);
+    }
+
+    enum thisBuildScript = __FILE_FULL_PATH__.buildNormalizedPath;
+    auto builder = RuleBuilder(false, [thisBuildScript]);
+    builder.buildMultiple(rules.data);
+
+    writeln("Success");
+    return 0;
+}
+
+auto repoPath(T...)(T args)
+{
+    return __FILE_FULL_PATH__.dirName.buildNormalizedPath(args);
+}
 
 string getOrSet(ref string[BuildVar] map, BuildVar name, lazy string default_)
 {
@@ -22,6 +96,23 @@ enum BuildVar
     dotnetCompiler,
     dotnetLoader,
     cecilDir,
+}
+
+bool tryParseVar(ref string[BuildVar] vars, string s)
+{
+    const equalIndex = s.indexOf('=');
+    if (equalIndex == -1)
+        return false;
+    const varString = s[0 .. equalIndex];
+    BuildVar varEnum;
+    try { varEnum = to!BuildVar(varString); }
+    catch (ConvException)
+    {
+        writefln("Error: build var '%s' does not exist", varString);
+        throw new AlreadyReportedException();
+    }
+    vars[varEnum] = s[equalIndex + 1 .. $];
+    return true;
 }
 
 struct TargetsResult
@@ -106,22 +197,37 @@ auto makeTargets(ref string[BuildVar] vars)
     const csreflectExe = buildPath(outCsreflectDir.target, "csreflect.exe");
     //const csreflectConfig = repoPath("csreflect", "app.config");
     const monoCecilDllRuntimeCopy = csreflectExe.dirName.buildPath(monoCecilDll.baseName);
-    auto csreflectCSharpSource = [repoPath("csreflect", "GenerateStaticMethodsCecil.cs")];
+    string[] csreflectRefs = [
+        //"System",
+        //"System.Core",
+    ];
+    auto monoSymbolWriter = "Mono.CompilerServices.SymbolWriter.dll";
+    version (Windows)
+        monoSymbolWriter = `C:\Program Files\Mono\lib\mono\4.5\` ~ monoSymbolWriter;
+    const csreflectDllFileRefs = [
+        monoSymbolWriter,
+        monoCecilDll,
+    ];
+    auto csreflectCSharpSources = [repoPath("csreflect", "GenerateStaticMethodsCecil.cs")];
     const csreflect = makeRule!( (builder, rule) => builder
         .deps(chain(outCsreflectDir.only, csreflectDeps).array)
         .name("csreflect")
-        .sources([monoCecilDll] ~ csreflectCSharpSource)
+        .sources([monoCecilDll] ~ csreflectCSharpSources)
         .targets([csreflectExe, /*csreflectConfig,*/ monoCecilDllRuntimeCopy])
         .func(() {
             exec([
               dotnetCompiler,
               "/out:" ~ csreflectExe,
-              "/reference:Mono.CompilerServices.SymbolWriter.dll",
-              "/reference:" ~ monoCecilDll,
-            ] ~ csreflectCSharpSource);
+            ]
+            //~ csreflectRefs.map!(e => "/reference:" ~ e ~ ".dll").array
+            ~ csreflectDllFileRefs.map!(e => "/reference:" ~ e).array
+            ~ csreflectCSharpSources);
             copyAndTouch(monoCecilDll, monoCecilDllRuntimeCopy);
         })
     );
+    //
+    // This is not needed to build csreflect but it can help development
+    //
 
     const dotnetLoader = vars.getOrSet(BuildVar.dotnetLoader, () {
         version (Windows)
@@ -228,97 +334,31 @@ auto makeTargets(ref string[BuildVar] vars)
     ));
     rootRules.put(allTests);
     rootRules.put(derelictUtil);
+    rootRules.put(csreflectProjectsTarget(outCsreflectDir, csreflectRefs, csreflectDllFileRefs, csreflectCSharpSources));
     return TargetsResult(errorCount, rootRules.data);
 }
 
-int usage(T)(TargetsResult result, const string[BuildVar] vars, T getoptResult)
+auto csreflectProjectsTarget(immutable(BuildRule)* outCsreflectDir, const string[] refs, const string[] dllFileRefs, const string[] sources)
 {
-    defaultGetoptPrinter("./build.d <targets>..", getoptResult.options);
-    writeln();
-    // Print targets with a descriptions, name or single target
-    writeln("Common Targets");
-    writeln("------------");
-    foreach (rule; BuildRuleRange(result.rootRules))
-    {
-        if (rule.description)
-            writefln("%s | %s", *rule, rule.description);
-        else if (rule.name)
-            writefln("%s", rule.name);
-        else if (rule.target)
-            writefln("%s", rule.target);
-    }
-    writeln();
-    writeln("Variables");
-    writeln("------------");
-    foreach (name; __traits(allMembers, BuildVar))
-    {
-        writefln("%s | default=%s", name, vars.get(__traits(getMember, BuildVar, name), "<none>"));
-    }
-    return 1;
-}
+    import std.uuid : randomUUID;
 
-int main(string[] args)
-{
-    try { return main2(args); }
-    catch (AlreadyReportedException) { return 1; }
-}
-int main2(string[] args)
-{
-    // TODO: chdir to a random temporary directory so we know which works from any directory?
-    auto getoptResult = getopt(args);
+    const solution2008 = buildPath(outCsreflectDir.target, "csreflect.2008.sln");
+    const csproj2008 = buildPath(outCsreflectDir.target, "csreflect.2008.csproj");
+    const csprojUser2008 = buildPath(outCsreflectDir.target, "csreflect.2008.csproj.user");
+    const csproj2017 = buildPath(outCsreflectDir.target, "csreflect.2017.csproj");
+    return makeRule!( (builder, rule) => builder
+        .deps([outCsreflectDir])
+        .name("csreflectProjects")
+        .targets([solution2008, csproj2008, csprojUser2008, csproj2017])
+        .func(() {
+            import visualstudio;
+            const csprojUuid = randomGuid();
 
-    string[BuildVar] vars;
-    args = args[1..$];
-    auto targetStrings = appender!(string[]);
-    foreach (arg; args)
-    {
-        if (!tryParseVar(vars, arg))
-            targetStrings.put(arg);
-    }
-    const makeTargetsResult = makeTargets(vars);
-    if (getoptResult.helpWanted || targetStrings.data.length == 0)
-        return usage(makeTargetsResult, vars, getoptResult);
-    if (makeTargetsResult.errorCount > 0)
-        return 1; // errors already printed
-    const rootRules = makeTargetsResult.rootRules;
+            writeSolution2008(File(solution2008, "w"), csprojUuid);
+            writeCsproj2008(File(csproj2008, "w"), "csreflect", csprojUuid, refs, dllFileRefs, sources);
+            writeCsprojUser2008(File(csprojUser2008, "w"));
 
-    auto rules = appender!(immutable(BuildRule*)[])();
-    foreach (target; targetStrings.data)
-    {
-        auto rule = findRule(rootRules, target);
-        if (rule is null)
-        {
-            writefln("Error: unknown target '%s'", target);
-            return 1;
-        }
-        rules.put(rule);
-    }
-
-    auto builder = RuleBuilder(false, [thisBuildScript]);
-    builder.buildMultiple(rules.data);
-
-    writeln("Success");
-    return 0;
-}
-
-auto repoPath(T...)(T args)
-{
-    return __FILE_FULL_PATH__.dirName.buildNormalizedPath(args);
-}
-
-bool tryParseVar(ref string[BuildVar] vars, string s)
-{
-    const equalIndex = s.indexOf('=');
-    if (equalIndex == -1)
-        return false;
-    const varString = s[0 .. equalIndex];
-    BuildVar varEnum;
-    try { varEnum = to!BuildVar(varString); }
-    catch (ConvException)
-    {
-        writefln("Error: build var '%s' does not exist", varString);
-        throw new AlreadyReportedException();
-    }
-    vars[varEnum] = s[equalIndex + 1 .. $];
-    return true;
+            writeCsproj2017(File(csproj2017, "w"), "csreflect", csprojUuid, refs, dllFileRefs, sources);
+        })
+    );
 }

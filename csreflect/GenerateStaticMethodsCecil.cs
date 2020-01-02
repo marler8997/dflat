@@ -67,7 +67,7 @@ class CLRBuilder
         }
     }
 
-    void writeAggHdr()
+    void WriteAggHdr()
     {
         if (useClass)
             sw.Write("abstract class ");
@@ -112,7 +112,7 @@ class CLRBuilder
             Console.WriteLine("Generating type '{0}'", t.Name);
 
             //TODO: support namespaces
-            writeAggHdr();
+            WriteAggHdr();
             tb = new TypeDefinition(t.Namespace,
                                     t.Name + "static",
                                     Mono.Cecil.TypeAttributes.Public,
@@ -171,7 +171,7 @@ class CLRBuilder
         }
         sw.Write(")");
     }
-    void writeDMethod(bool isStatic, bool prop,string retTy,string name, Type[] tps, string altName = null)
+    void writeDMethod(bool isStatic, bool prop,string retTy,string name, Type[] tps, string altName)
     {
         sw.Write("    ");
         if (useClass)
@@ -265,7 +265,7 @@ class CLRBuilder
         {
             mb.Parameters.Add(new ParameterDefinition(md.ImportReference(_t)));
         }
-        writeDMethod(mi.IsStatic, isProp, toDType(mi.ReturnType), methname, tps);
+        writeDMethod(mi.IsStatic, isProp, toDType(mi.ReturnType), methname, tps, null);
 
         {
             var ilg = mb.Body.GetILProcessor();
@@ -332,7 +332,7 @@ class CLRBuilder
         Type[] tps = ci.GetParameters().Select(p => p.ParameterType).ToArray();
 
         writeDMethod(true,  false, t.Name, "make",  tps, "void*");
-        writeDMethod(false, false, "void", "unpin", new Type[]{});
+        writeDMethod(false, false, "void", "unpin", new Type[]{}, null);
 
         {
             Console.WriteLine("here");
