@@ -13,55 +13,68 @@ using System.Runtime.InteropServices;
 
 class CLRBuilder
 {
+    static int Main(string[] args)
+    {
+        if (args.Length == 2)
+        {
+            new CLRBuilder(args[0],args[1], null).run();
+            return 0;
+        }
+        else if (args.Length == 3)
+        {
+            new CLRBuilder(args[0],args[1],args[2]).run();
+            return 0;
+        }
+        else
+        {
+            Console.WriteLine("Usage: csreflect NAME INPUT_DIR [OUTPUT_DIR]");
+            return 1;
+        }
+    }
+
+    private readonly string baseName;
+    private readonly string baseNameLower;
+    private readonly string inputDir;
+    private readonly string outputDir;
+
     StreamWriter sw; // output .d file
     Type t;          // reflected upon type
     TypeDefinition tb;  // type under construction
-    string fname;    // name of file
-    private string idir;
-    private string odir;
     ModuleDefinition md;
-    bool useCls;
-    CLRBuilder(string name, string aidir, string aodir)
+    bool useClass;
+
+    CLRBuilder(string baseName, string inputDir, string outputDir)
     {
-        fname = name;
-        idir = aidir;
-        odir = (aodir == null) ? aidir : aodir;
-        string outputDFile = Path.Combine(odir, fname.ToLower() + ".d");
-        sw = new StreamWriter(outputDFile, false, Encoding.UTF8);
-        useCls = false;
+        this.baseName = baseName;
+        this.baseNameLower = baseName.ToLower();
+        this.inputDir = inputDir;
+        if (outputDir == null)
+            outputDir = inputDir;
+        this.outputDir = (outputDir == null) ? inputDir : outputDir;
+        string outputDFile = Path.Combine(this.outputDir, baseNameLower + ".d");
+        sw = new StreamWriter(new FileStream(outputDFile, FileMode.Create, FileAccess.Write, FileShare.Read));
+        useClass = false;
     }
-    static void Main(string[] args)
+
+    void WriteModuleHeader()
     {
-        if (args.Length == 2)
-            new CLRBuilder(args[0],args[1], null).run();
-        else
-            new CLRBuilder(args[0],args[1],args[2]).run();
-    }
-    
-    static void log(string s)
-    {
-        System.Console.WriteLine(s);
-        System.Console.Out.Flush();
-    }
-    void writeHeader()
-    {
-        sw.Write("module " + fname.ToLower() + ";\n");
+        sw.Write("module " + baseNameLower + ";\n");
         sw.Write("import dflat.wrap;\nimport dflat.types;\nimport dflat.host;\nimport core.memory : GC;\n");
-        if (useCls)
+        if (useClass)
         {
-            sw.Write("@DLL(\"" + fname + "\")\n");
+            sw.Write("@DLL(\"" + baseName + "\")\n");
             sw.Write("{\n");
         }
     }
 
     void writeAggHdr()
     {
-    	if (useCls)
-    		sw.Write("abstract class ");
-    	else
-    		sw.Write("struct ");
+        if (useClass)
+            sw.Write("abstract class ");
+        else
+            sw.Write("struct ");
         sw.Write(t.Name); sw.Write("\n{\n");
-        if (!useCls)
+        if (!useClass)
         {
             sw.Write("    Instance!(\"" + t.Name +"\") _raw;\n    alias _raw this;\n\n");
         }
@@ -70,24 +83,34 @@ class CLRBuilder
 
     void run()
     {
-        writeHeader();
+        WriteModuleHeader();
         var resolver = new DefaultAssemblyResolver();
-        resolver.AddSearchDirectory(Directory.GetCurrentDirectory());
-        md = ModuleDefinition.CreateModule(fname + "static",
-                                               new ModuleParameters { Kind = ModuleKind.Dll, AssemblyResolver = resolver });
+        //resolver.AddSearchDirectory(Directory.GetCurrentDirectory());
+        md = ModuleDefinition.CreateModule(baseName + "static",
+            new ModuleParameters { Kind = ModuleKind.Dll, AssemblyResolver = resolver });
 
         // To avoid duplicately adding types
         HashSet<String> visitedTypes = new HashSet<String>();
 
-
-        foreach (Type _ in Assembly.LoadFile(Path.GetFullPath(Path.Combine(idir, fname, fname + ".dll"))).GetExportedTypes())
+        foreach (Type _ in Assembly.LoadFile(Path.GetFullPath(Path.Combine(inputDir, baseName, baseName + ".dll"))).GetExportedTypes())
         {
             t = _;
             // To avoid duplicately adding methods
             HashSet<String> visitedMethods = new HashSet<String>();
+
             //Assume that duplicates are identical (e.g. interface / class pairs)
-            if (visitedTypes.Contains(t.Name)) continue;
+            if (visitedTypes.Contains(t.Name))
+            {
+                // TODO: does this happen?
+                //       Having the same name does not necessarily mean they are the same type??
+                //       what about fully-qualified name?  assembly? etc.
+                Console.WriteLine("visiting duplcated type '{0}'", t.Name);
+                continue;
+            }
             visitedTypes.Add(t.Name);
+
+            Console.WriteLine("Generating type '{0}'", t.Name);
+
             //TODO: support namespaces
             writeAggHdr();
             tb = new TypeDefinition(t.Namespace,
@@ -113,19 +136,19 @@ class CLRBuilder
                     // Already handled with addMethod above
                 }
             }
-            
+
             md.Types.Add(tb);
             sw.Write("}\n");
         }
 
-        md.Write(odir + "/" + fname + "static.dll");
+        md.Write(outputDir + "/" + baseName + "static.dll");
         sw.Close();
     }
 
-	void writeMethParams(bool isStatic, string retTy,Type[] tps)
-	{
-		sw.Write("("+retTy+ ((retTy != "" && tps.Length >= 1)? ", " : ""));
-		if (isStatic)
+    void writeMethParams(bool isStatic, string retTy,Type[] tps)
+    {
+        sw.Write("("+retTy+ ((retTy != "" && tps.Length >= 1)? ", " : ""));
+        if (isStatic)
         {
             if (tps.Length > 0)
             {
@@ -147,35 +170,35 @@ class CLRBuilder
             }
         }
         sw.Write(")");
-	}
+    }
     void writeDMethod(bool isStatic, bool prop,string retTy,string name, Type[] tps, string altName = null)
     {
         sw.Write("    ");
-    	if (useCls)
-        	sw.Write("abstract ");
-        if (isStatic && !useCls)
+        if (useClass)
+            sw.Write("abstract ");
+        if (isStatic && !useClass)
             sw.Write("static ");
         if (prop)
             sw.Write("@property ");
-        
+
         string methName = (prop) ? name.Substring("get_".Length) : name;
         sw.Write(retTy + " " + methName);
 
         writeMethParams(isStatic,"",tps);
- 
-        if (useCls)
+
+        if (useClass)
         {
-        	sw.Write(";\n");
-        	return;
+            sw.Write(";\n");
+            return;
         }
         sw.Write("\n    {\n");
-        
+
         sw.Write("        alias func = extern(C) " + ((altName != null) ? altName : retTy) + " function");
         writeMethParams(isStatic,isStatic ? "" : "void*",tps); sw.Write(";\n");
 
         sw.Write("        // Avoid the GC stopping a running C# thread.\n");
         sw.Write("        GC.disable; scope(exit) GC.enable;\n");
-        sw.Write("        auto f = cast(func)(clrhost.create_delegate(\"" + fname + "static\",");
+        sw.Write("        auto f = cast(func)(clrhost.create_delegate(\"" + baseName + "static\",");
         sw.Write("\"" + t.Namespace + (t.Namespace == null ? "" : ".") + t.Name + "static\", \"" + name + "\"));\n");
         if (retTy == "void")
             sw.Write("        return f(");
@@ -185,9 +208,9 @@ class CLRBuilder
         {
             sw.Write("_raw" + ((tps.Length >= 1)? ", " : ""));
         }
-		if (tps.Length > 0)
+        if (tps.Length > 0)
         {
-            
+
             for (int i = 1; i < tps.Length; i++)
             {
                 sw.Write("_param_"+(i-1).ToString() + ",");
@@ -209,14 +232,14 @@ class CLRBuilder
         //}
 
         // Need to treat differently
-        //	ToString Equals GetHashCode & GetType
+        //    ToString Equals GetHashCode & GetType
         bool isProp = mi.Name.StartsWith("get_") || mi.Name.StartsWith("set_");
 
         List<Type> tl = new List<Type>();
         //tl.Insert(0, t);
         tl.AddRange(mi.GetParameters().Select(p => p.ParameterType));
         Type[] tps = tl.ToArray();
-        log("mi.Name = " + mi.Name);
+        Console.WriteLine("mi.Name = {0}", mi.Name);
         string methname;
         if (mi.Name == "ToString")
         {
@@ -227,12 +250,12 @@ class CLRBuilder
         }
         else if (mi.Name == "GetType")
         {
-            
+
             methname = "getType";
             return;
         }
         else methname = mi.Name;
-        log("mi.Name = " + mi.Name);
+        Console.WriteLine("mi.Name = {0}", mi.Name);
         var mb = new MethodDefinition(methname,
                                    Mono.Cecil.MethodAttributes.Public |
                                        Mono.Cecil.MethodAttributes.Static,
@@ -261,7 +284,7 @@ class CLRBuilder
                     newVar(mb, mi.ReturnType);
                 md.ImportReference(typeof(GCHandle));
                 ilg.Emit(OpCodes.Ldarg_0);
-                
+
                 MethodReference mr = md.ImportReference(typeof(GCHandle).GetMethod("FromIntPtr", new[] {typeof(IntPtr)}));
                 ilg.Emit(OpCodes.Call, mr);
                 ilg.Emit(OpCodes.Stloc_0);
@@ -301,18 +324,18 @@ class CLRBuilder
         // static void unpin(IntPtr pthis)
         //    GCHandle gch = GCHandle.FromIntPtr(pthis);
         //    gch.Free();
-        //	  return;
+        //      return;
         // }
         // Generate D
         //
         // @MethodType.static_ t ___ctor( typeof(ci.GetParameters()) args...)
         Type[] tps = ci.GetParameters().Select(p => p.ParameterType).ToArray();
-        
+
         writeDMethod(true,  false, t.Name, "make",  tps, "void*");
         writeDMethod(false, false, "void", "unpin", new Type[]{});
 
         {
-            log("here");
+            Console.WriteLine("here");
             var mb = new MethodDefinition("make",
                                        Mono.Cecil.MethodAttributes.Public |
                                        Mono.Cecil.MethodAttributes.Static,
@@ -377,7 +400,7 @@ class CLRBuilder
             return "void*";
         else if (type.IsArray)
         {
-            //N.B. the marshaller can't handle nested (i.e. jagged) arrays. 
+            //N.B. the marshaller can't handle nested (i.e. jagged) arrays.
             return "SafeArray!(" + toDType(type.GetElementType()) + "," + type.GetArrayRank().ToString() + ")";
         }
         else if (type.IsByRef)
@@ -414,16 +437,16 @@ class CLRBuilder
             ilg.Emit(OpCodes.Ldarg_S, x);
         }
     }
-    
+
     // https://docs.microsoft.com/en-au/dotnet/standard/native-interop/type-marshaling
     static bool hasMarshalling(Type t)
     {
         if (Array.Exists(marshalledTypes,
                          e => e == t))
-        	return true;
+            return true;
         return false;
     }
-    
+
     static Type[] marshalledTypes = new Type[] {
         typeof(byte),
         typeof(sbyte),
