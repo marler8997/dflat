@@ -1,57 +1,41 @@
 // TODO: rename this to backend/coreclr.d
-module dflat.host;
+module dflat.coreclr.host;
 
 import dflat.cstring;
-import dflat.bind;
-enum : string
-{
-    // pathSeparator separated list of directories
-    APP_PATHS = "APP_PATHS",
-    //pathSeparator separated list of files. See TrustedPlatformAssembliesFiles
-    TRUSTED_PLATFORM_ASSEMBLIES = "TRUSTED_PLATFORM_ASSEMBLIES",
-    // pathSeparator separated list of directories
-    APP_NI_PATHS = "APP_NI_PATHS",
-    // pathSeparator separated list of directories
-    NATIVE_DLL_SEARCH_DIRECTORIES = "NATIVE_DLL_SEARCH_DIRECTORIES",
-    // boolean
-    SYSTEM_GC_SERVER = "System.GC.Server",
-    // boolean
-    SYSTEM_GLOBALISATION_INVARIANT = "System.Globalization.Invariant",
-}
+import dflat.coreclr.lib;
 import std.stdio;
 private import std.path;
 import std.file;
 import std.algorithm;
 import std.range;
-string TrustedPlatformAssembliesFiles(string dir = dirName(dflat.bind.libNames))
+
+
+string defaultTrustedPlatformAssembliesFiles(string dir = dirName(dflat.coreclr.lib.getCoreclrLibname))
 {
-    immutable exts = [
+    immutable extensions = [
         "*.ni.dll", // Probe for .ni.dll first so that it's preferred
         "*.dll",    // if ni and il coexist in the same dir
         "*.ni.exe", // ditto
         "*.exe",
     ];
     import std.array;
-    Appender!string ret;
-    byte[string] asms;
+    Appender!string assemblies;
+    bool[string] added;
 
-
-    foreach(ex; exts)
-    foreach(f;dirEntries(dir,ex, SpanMode.shallow))
+    string prefix = "";
+    foreach(extension; extensions)
+    foreach(entry; dirEntries(dir, extension, SpanMode.shallow).filter!(e => e.isFile))
     {
-        if (!f.isFile) continue;
-
-        if (f.name !in asms)
+        if (entry.name !in added)
         {
-            asms[f.name] = 1;
-            //ret.put(dir);
-            //ret.put(dirSeparator);
-            ret.put(f.name);
-            ret.put(pathSeparator);
+            added[entry.name] = true;
+            assemblies.put(prefix);
+            assemblies.put(entry.name);
+            prefix = pathSeparator;
         }
     }
 
-    return ret.data[0 .. $-1]; // remove the last path sep
+    return assemblies.data;
 }
 
 struct CLRHost
@@ -119,16 +103,32 @@ struct CoreclrProperties
     }
 }
 
+enum StandardCoreclrProp : string
+{
+    /// pathSeparator separated list of directories
+    APP_PATHS = "APP_PATHS",
+    /// pathSeparator separated list of files. See TrustedPlatformAssembliesFiles
+    TRUSTED_PLATFORM_ASSEMBLIES = "TRUSTED_PLATFORM_ASSEMBLIES",
+    /// pathSeparator separated list of directories
+    APP_NI_PATHS = "APP_NI_PATHS",
+    /// pathSeparator separated list of directories
+    NATIVE_DLL_SEARCH_DIRECTORIES = "NATIVE_DLL_SEARCH_DIRECTORIES",
+    /// boolean
+    SYSTEM_GC_SERVER = "System.GC.Server",
+    /// boolean
+    SYSTEM_GLOBALISATION_INVARIANT = "System.Globalization.Invariant",
+}
+
 string[string] coreclrDefaultProperties()
 {
     const cwd = getcwd();
     return [
-        TRUSTED_PLATFORM_ASSEMBLIES : TrustedPlatformAssembliesFiles(),
-        APP_PATHS : cwd,
-        APP_NI_PATHS : cwd,
-        NATIVE_DLL_SEARCH_DIRECTORIES : cwd,
-        SYSTEM_GC_SERVER : "false",
-        SYSTEM_GLOBALISATION_INVARIANT : "false"
+        StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES : defaultTrustedPlatformAssembliesFiles(),
+        StandardCoreclrProp.APP_PATHS : cwd,
+        StandardCoreclrProp.APP_NI_PATHS : cwd,
+        StandardCoreclrProp.NATIVE_DLL_SEARCH_DIRECTORIES : cwd,
+        StandardCoreclrProp.SYSTEM_GC_SERVER : "false",
+        StandardCoreclrProp.SYSTEM_GLOBALISATION_INVARIANT : "false"
     ];
 }
 
@@ -150,6 +150,7 @@ HRESULT tryCoreclrInit(CLRHost* host, const ref CoreclrOptions options)
         const newOptions = const CoreclrOptions(CString(exePath), options.appDomainFriendlyName, options.properties);
         return tryCoreclrInit(host, newOptions);
     }
+
     const appDomain = options.appDomainFriendlyName ? options.appDomainFriendlyName : options.exePath;
 
     version (DebugCoreclr)

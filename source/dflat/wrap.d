@@ -2,7 +2,7 @@ module dflat.wrap;
 
 import std.traits; // hasUDA getUDA
 import std.meta : AliasSeq;
-import dflat.host;
+import dflat.coreclr.host;
 //UDA
 struct DLL
 {

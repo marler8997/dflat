@@ -7,12 +7,12 @@ void clrhostInit()
     import std.file : thisExePath;
     import std.path : buildPath, dirName;
 
-    CLRCore.load();
-
+    loadLibCoreclr();
     CoreclrOptions options;
     auto propMap = coreclrDefaultProperties();
     const exePath = thisExePath().dirName;
-    propMap[TRUSTED_PLATFORM_ASSEMBLIES] = pathcat(propMap[TRUSTED_PLATFORM_ASSEMBLIES],
+    propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES] =pathcat(
+        propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES],
         buildPath(exePath, "HelloWorldstatic.dll"),
         buildPath(exePath, "HelloWorld.dll"));
     options.properties = CoreclrProperties(propMap);

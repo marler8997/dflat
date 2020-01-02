@@ -61,7 +61,7 @@ class CLRBuilder
     public ModuleDefinition Run(Assembly assembly)
     {
         dwrapper.Write("module " + baseNameLower + ";\n");
-        dwrapper.Write("import dflat.wrap;\nimport dflat.types;\nimport dflat.host;\nimport core.memory : GC;\n");
+        dwrapper.Write("import dflat.wrap;\nimport dflat.types;\nimport dflat.coreclr.host;\nimport core.memory : GC;\n");
         if (useClass)
         {
             dwrapper.Write("@DLL(\"" + baseName + "\")\n");

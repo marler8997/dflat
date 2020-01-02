@@ -7,12 +7,12 @@ void clrhostInit()
     import std.file : thisExePath;
     import std.path : buildPath, dirName;
 
-    CLRCore.load();
-
+    loadLibCoreclr();
     CoreclrOptions options;
     auto propMap = coreclrDefaultProperties();
     const exePath = thisExePath().dirName;
-    propMap[TRUSTED_PLATFORM_ASSEMBLIES] = pathcat(propMap[TRUSTED_PLATFORM_ASSEMBLIES],
+    propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES] =pathcat(
+        propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES],
         buildPath(exePath, "Class1static.dll"),
         buildPath(exePath, "Class1.dll"));
     options.properties = CoreclrProperties(propMap);
