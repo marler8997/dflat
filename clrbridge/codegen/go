@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -ex
+csc ClrBridgeCodegen.cs
+#mono ClrBridgeCodegen.exe /nix/store/6p0h4z2ib4raszz94prnbaz5zga5da23-mono-5.20.1.27/lib/mono/4.5/mscorlib.dll mscorlib.d
+rm -rf out
+
+include_paths="-I=../dlib -I=../../source_cstring -I=../../source -I=../../out/DerelictUtil/source "
+
+mono ClrBridgeCodegen.exe mscorlib out
+dmd -lib -of=out/mscorlib $include_paths $(find out/mscorlib -name "*.d")
+
+mono ClrBridgeCodegen.exe "System, Version=2.0.3600.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" out
+dmd -lib -of=out/system $include_paths $(find out/System -name "*.d")
