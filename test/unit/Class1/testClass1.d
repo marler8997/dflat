@@ -1,28 +1,10 @@
-import dflat;
-
+import clrtestsetup;
 import class1;
-
-void clrhostInit()
-{
-    import std.file : thisExePath;
-    import std.path : buildPath, dirName;
-
-    loadLibCoreclr();
-    CoreclrOptions options;
-    auto propMap = coreclrDefaultProperties();
-    const exePath = thisExePath().dirName;
-    propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES] =pathcat(
-        propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES],
-        buildPath(exePath, "Class1static.dll"),
-        buildPath(exePath, "Class1.dll"));
-    options.properties = CoreclrProperties(propMap);
-    coreclrInit(&clrhost, options);
-}
 
 void main()
 {
-    clrhostInit();
-    scope (exit) clrhost.shutdown();
+    clrSetup("Class1");
+    scope (exit) clrCleanup();
 
     {
         import std.stdio;

@@ -1,40 +1,32 @@
 /**
 Checkout API here: https://github.com/dotnet/coreclr/blob/master/src/coreclr/hosts/inc/coreclrhost.h
+
+This module loads the coreclr library into a set of global function pointers.
+These global function pointers are initialized to an implementation that asserts.
+Once the loadCoreclr function is called, then these global function pointers will be bound
+to the corresponding functions in the coreclr library.
+
 */
-module dflat.coreclr.lib;
+module dflat.coreclr;
 
+import dflat.hresult;
 import dflat.cstring;
-import derelict.util.loader;
 
-public
+private
 {
     import derelict.util.system;
-    
     static if(Derelict_OS_Windows)
         enum defaultLibNames = `C:\Program Files (x86)\dotnet\shared\Microsoft.NETCore.App\3.1.0\coreclr.dll`;
     else static if (Derelict_OS_Mac)
         enum defaultLibNames = "/usr/local/share/dotnet/shared/Microsoft.NETCore.App/2.2.3/libcoreclr.dylib";
     else static if (Derelict_OS_Linux)
-        enum defaultLibNames = "libcoreclr.so";
+        //enum defaultLibNames = "libcoreclr.so";
+        enum defaultLibNames = "/nix/store/b0v83nvcsd49n3awa9v4aa2vmxfz5308-dotnet-sdk-2.2.401/shared/Microsoft.NETCore.App/2.2.6/libcoreclr.so";
     else
         static assert(0, "Need to implement CoreCLR libNames for this operating system.");
 }
 
-// TODO: this should come from a library like druntime
-struct HRESULT
-{
-    private uint value;
-    bool passed() const { return value == 0; }
-    bool failed() const { return value != 0; }
-    uint rawValue() const { return value; }
-    void toString(Sink)(Sink sink) const
-    {
-        import std.format: formattedWrite;
-        formattedWrite(sink, "0x%x", value);
-    }
-}
-
-struct CoreclrFunc
+struct FuncDefs
 {
     alias coreclr_initialize = extern(C) HRESULT function(
         CString exePath,
@@ -43,19 +35,19 @@ struct CoreclrFunc
         const CString* propertyKeys,
         const CString* propertyValues,
         void** hostHandle,
-        uint* domainId);
+        uint* domainId) nothrow @nogc;
 
-    alias coreclr_shutdown = extern(C) int function(void* hostHandle, uint domainId);
+    alias coreclr_shutdown = extern(C) int function(void* hostHandle, uint domainId) nothrow @nogc;
 
-    alias coreclr_shutdown_2 = extern(C) int function(void* hostHandle, uint domainId, int* latchedExitCode);
+    alias coreclr_shutdown_2 = extern(C) int function(void* hostHandle, uint domainId, int* latchedExitCode) nothrow @nogc;
 
-    alias coreclr_create_delegate = extern(C) int function(
+    alias coreclr_create_delegate = extern(C) HRESULT function(
         void* hostHandle,
         uint domainId,
         CString entryPointAssemblyName,
         CString entryPointTypeName,
         CString entryPointMethodName,
-        void** dg);
+        void** dg) nothrow @nogc;
 
     alias coreclr_execute_assembly = extern(C) int function(
         void* hostHandle,
@@ -63,10 +55,12 @@ struct CoreclrFunc
         int argc,
         const char** argv,
         const char* managedAssemblyPath,
-        uint* exitCode);
+        uint* exitCode) nothrow @nogc;
 }
 
-private Exception notLoaded() { throw new Exception("the coreclr library has not been loaded, have you called dflat.coreclr.loadLibCoreclr?"); }
+private bool notLoaded() nothrow @nogc
+{ assert(0, "the coreclr library has not been loaded, have you called dflat.coreclr.loadCoreclr?"); }
+
 // TODO: see if there is a shorter way to define the notLoaded functions
 private struct NotLoaded
 {
@@ -77,23 +71,23 @@ private struct NotLoaded
         const CString* propertyKeys,
         const CString* propertyValues,
         void** hostHandle,
-        uint* domainId)
-    { throw notLoaded(); }
+        uint* domainId) nothrow @nogc
+    { notLoaded(); assert(0); }
 
-    static extern(C) int coreclr_shutdown(void* hostHandle, uint domainId)
-    { throw notLoaded(); }
+    static extern(C) int coreclr_shutdown(void* hostHandle, uint domainId) nothrow @nogc
+    { notLoaded(); assert(0); }
 
-    static extern(C) int coreclr_shutdown_2(void* hostHandle, uint domainId, int* latchedExitCode)
-    { throw notLoaded(); }
+    static extern(C) int coreclr_shutdown_2(void* hostHandle, uint domainId, int* latchedExitCode) nothrow @nogc
+    { notLoaded(); assert(0); }
 
-    static extern(C) int coreclr_create_delegate(
+    static extern(C) HRESULT coreclr_create_delegate(
         void* hostHandle,
         uint domainId,
         CString entryPointAssemblyName,
         CString entryPointTypeName,
         CString entryPointMethodName,
-        void** dg)
-    { throw notLoaded(); }
+        void** dg) nothrow @nogc
+    { notLoaded(); assert(0); }
 
     static extern(C) int coreclr_execute_assembly(
         void* hostHandle,
@@ -101,29 +95,30 @@ private struct NotLoaded
         int argc,
         const char** argv,
         const char* managedAssemblyPath,
-        uint* exitCode)
-    { throw notLoaded(); }
+        uint* exitCode) nothrow @nogc
+    { notLoaded(); assert(0); }
 }
 
-private __gshared string loadLibCoreclrLibName = null; // used by 'host.d' to find other libraries/assemblies
-__gshared CoreclrFunc.coreclr_initialize       coreclr_initialize       = &NotLoaded.coreclr_initialize;
-__gshared CoreclrFunc.coreclr_shutdown         coreclr_shutdown         = &NotLoaded.coreclr_shutdown;
-__gshared CoreclrFunc.coreclr_shutdown_2       coreclr_shutdown_2       = &NotLoaded.coreclr_shutdown_2;
-__gshared CoreclrFunc.coreclr_create_delegate  coreclr_create_delegate  = &NotLoaded.coreclr_create_delegate;
-__gshared CoreclrFunc.coreclr_execute_assembly coreclr_execute_assembly = &NotLoaded.coreclr_execute_assembly;
+__gshared FuncDefs.coreclr_initialize       coreclr_initialize       = &NotLoaded.coreclr_initialize;
+__gshared FuncDefs.coreclr_shutdown         coreclr_shutdown         = &NotLoaded.coreclr_shutdown;
+__gshared FuncDefs.coreclr_shutdown_2       coreclr_shutdown_2       = &NotLoaded.coreclr_shutdown_2;
+__gshared FuncDefs.coreclr_create_delegate  coreclr_create_delegate  = &NotLoaded.coreclr_create_delegate;
+__gshared FuncDefs.coreclr_execute_assembly coreclr_execute_assembly = &NotLoaded.coreclr_execute_assembly;
+private __gshared string loadCoreclrLibName = null; // used by 'host.d' to find other libraries/assemblies
 
 /**
 Load the coreclr library functions (i.e. coreclr_initialize, coreclr_shutdown, etc).
 Params:
   libNames = A string containing one or more comma-separated shared library names.
 */
-void loadLibCoreclr(string libNames = defaultLibNames)
+void loadCoreclr(string libNames = defaultLibNames)
 {
     import core.atomic : atomicExchange;
+    import derelict.util.loader;
 
     static shared calledAlready = false;
     if (atomicExchange(&calledAlready, true))
-        throw new Exception("loadLibCoreclr was called more than once");
+        throw new Exception("loadCoreclr was called more than once");
 
     static class CoreclrLoader : SharedLibLoader
     {
@@ -140,12 +135,12 @@ void loadLibCoreclr(string libNames = defaultLibNames)
     }
     auto loader = new CoreclrLoader(libNames);
     loader.load();
-    loadLibCoreclrLibName = loader.libName;
-    assert(loadLibCoreclrLibName !is null, "codebug: did not expect SharedLibLoader.lib.name to return null after calling load()");
+    loadCoreclrLibName = loader.libName;
+    assert(loadCoreclrLibName !is null, "codebug: did not expect SharedLibLoader.lib.name to return null after calling load()");
 }
 
 string getCoreclrLibname()
-in { if (loadLibCoreclrLibName is null) throw notLoaded(); } do
+in { if (loadCoreclrLibName is null) assert(notLoaded()); } do
 {
-    return loadLibCoreclrLibName;
+    return loadCoreclrLibName;
 }

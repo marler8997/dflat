@@ -1,28 +1,12 @@
-import dflat;
+import clrtestsetup;
 import simple;
 
-void clrhostInit()
-{
-    import std.file : thisExePath;
-    import std.path : buildPath, dirName;
-
-    loadLibCoreclr();
-    CoreclrOptions options;
-    auto propMap = coreclrDefaultProperties();
-    const exePath = thisExePath().dirName;
-    propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES] =pathcat(
-        propMap[StandardCoreclrProp.TRUSTED_PLATFORM_ASSEMBLIES],
-        buildPath(exePath, "Simplestatic.dll"),
-        buildPath(exePath, "Simple.dll"));
-    options.properties = CoreclrProperties(propMap);
-    coreclrInit(&clrhost, options);
-}
 void main()
 {
     import std.stdio;
 
-    clrhostInit();
-    scope (exit) clrhost.shutdown();
+    clrSetup("Simple");
+    scope (exit) clrCleanup();
 
     writeln("Calling NoOp...");
     Funcs.NoOp();

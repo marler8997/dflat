@@ -1,8 +1,9 @@
 module dflat;
 
 public import dflat.cstring;
-public import dflat.coreclr.lib;
+public import dflat.coreclr;
 public import dflat.coreclr.host;
+public import dflat.coreclr.globalhost;
 public import dflat.wrap;
 public import dflat.util;
 public import dflat.types;

@@ -61,7 +61,7 @@ class CLRBuilder
     public ModuleDefinition Run(Assembly assembly)
     {
         dwrapper.Write("module " + baseNameLower + ";\n");
-        dwrapper.Write("import dflat.wrap;\nimport dflat.types;\nimport dflat.coreclr.host;\nimport core.memory : GC;\n");
+        dwrapper.Write("import dflat.wrap;\nimport dflat.types;\nimport dflat.coreclr.host;\nimport dflat.coreclr.globalhost;\nimport core.memory : GC;\n");
         if (useClass)
         {
             dwrapper.Write("@DLL(\"" + baseName + "\")\n");
@@ -194,7 +194,7 @@ class CLRBuilder
 
         dwrapper.Write("        // Avoid the GC stopping a running C# thread.\n");
         dwrapper.Write("        GC.disable; scope(exit) GC.enable;\n");
-        dwrapper.Write("        auto f = cast(func)(clrhost.create_delegate(\"" + baseName + "static\",");
+        dwrapper.Write("        auto f = cast(func)(globalCoreclrHost.create_delegate(\"" + baseName + "static\",");
         dwrapper.Write("\"" + type.Namespace + (type.Namespace == null ? "" : ".") + type.Name + "static\", \"" + name + "\"));\n");
         if (retTy == "void")
             dwrapper.Write("        return f(");
