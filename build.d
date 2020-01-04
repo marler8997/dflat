@@ -294,6 +294,7 @@ auto makeTargets(ref string[BuildVar] vars)
                 exec([dCompiler,
                       "-g", "-debug",
                       "-I" ~ repoPath("source"),
+                      "-I" ~ repoPath("source_cstring"),
                       "-I" ~ repoPath("test"),
                       "-I" ~ absolutePath(buildPath(derelictUtil.target, "source")),
                       "-i",

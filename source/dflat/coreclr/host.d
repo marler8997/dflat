@@ -3,13 +3,13 @@ module dflat.coreclr.host;
 
 import std.path : dirName;
 
+import cstring;
+
 import dflat.hresult;
-import dflat.cstring;
 import dflat.coreclr;
 
 string defaultTrustedPlatformAssembliesFiles(string dir = dirName(getCoreclrLibname()))
 {
-    import dflat.cstring;
     import std.stdio;
     import std.path;
     import std.file;

@@ -9,8 +9,9 @@ to the corresponding functions in the coreclr library.
 */
 module dflat.coreclr;
 
+import cstring;
+
 import dflat.hresult;
-import dflat.cstring;
 
 private
 {

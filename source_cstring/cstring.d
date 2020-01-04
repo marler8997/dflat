@@ -1,4 +1,4 @@
-module dflat.cstring;
+module cstring;
 
 struct CString
 {

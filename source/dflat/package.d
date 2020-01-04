@@ -1,6 +1,5 @@
 module dflat;
 
-public import dflat.cstring;
 public import dflat.coreclr;
 public import dflat.coreclr.host;
 public import dflat.coreclr.globalhost;
