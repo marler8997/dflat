@@ -3,15 +3,18 @@ module cstring;
 struct CString
 {
     private const(char)* _ptr;
-    const(char)* ptr() const { return cast(const(char)*)_ptr; }
+    const(char)* ptr() const nothrow @nogc { return cast(const(char)*)_ptr; }
     alias ptr this;
-    void toString(Sink)(Sink sink) const
+    const(char)[] asSlice() const nothrow @nogc
     {
         import core.stdc.string : strlen;
-        if (_ptr is null)
-            sink("<null>");
-        else
-            sink(_ptr[0 .. strlen(_ptr)]);
+        if (_ptr is null) return null;
+        return cast(string)_ptr[0 .. strlen(_ptr)];
+    }
+    void toString(Sink)(Sink sink) const
+    {
+        const s = asSlice();
+        sink((s is null) ? "<null>" : s);
     }
 }
 
